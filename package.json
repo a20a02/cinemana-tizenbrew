@@ -1,0 +1,21 @@
+{
+  "name": "cinemana-tizenbrew",
+  "version": "1.0.0",
+  "description": "TizenBrew module: use the normal Cinemana website on a Samsung TV with the remote (focus navigation, carousels, player keys).",
+  "packageType": "mods",
+  "appName": "Cinemana",
+  "websiteURL": "https://cinemana.shabakaty.cc/",
+  "main": "userScript.js",
+  "keys": [
+    "MediaPlayPause",
+    "MediaPlay",
+    "MediaPause",
+    "MediaStop",
+    "MediaFastForward",
+    "MediaRewind",
+    "MediaTrackPrevious",
+    "MediaTrackNext"
+  ],
+  "author": "Abdullah Ali (Tenon)",
+  "license": "MIT"
+}
