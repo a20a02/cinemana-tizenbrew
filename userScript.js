@@ -14,6 +14,7 @@
   'use strict';
   if (window.__cinemanaRemote) return;
   window.__cinemanaRemote = true;
+  window.__cr = { cur: function () { return current; }, log: [] };
 
   var K = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, ENTER: 13, BACK: 10009, ESC: 27,
             PLAYPAUSE: 10252, PLAY: 415, PAUSE: 19, STOP: 413, FF: 417, RW: 412 };
@@ -174,6 +175,19 @@
     drawRing();
   }
 
+  // Angular often re-renders a button (same place, new element). Pick the
+  // element now sitting where our focus was, so focus is never "lost".
+  function reacquire() {
+    if (current && document.contains(current)) return current;
+    var list = candidates(), bestC = null, d = 60;
+    for (var i = 0; i < list.length; i++) {
+      var cc = center(list[i].r), dd = Math.abs(cc.x - lastPoint.x) + Math.abs(cc.y - lastPoint.y);
+      if (dd < d) { d = dd; bestC = list[i]; }
+    }
+    if (bestC) { current = bestC.el; drawRing(); }
+    return bestC ? bestC.el : null;
+  }
+
   /* --------------------------------------------------- spatial search */
 
   function score(dir, from, to) {
@@ -247,6 +261,7 @@
     if (busy) return;
     var list = candidates();
     if (initial) { var pt = primaryTarget(list); if (pt) { setFocus(pt.el, { noScroll: true }); return true; } }
+    if (current && !document.contains(current)) reacquire();
     if (!current || !document.contains(current)) {
       // (re)start from the element nearest to where we were
       var near = null, d = Infinity;
@@ -475,12 +490,27 @@
     var dir = c === K.LEFT ? 'left' : c === K.RIGHT ? 'right' : c === K.UP ? 'up' : c === K.DOWN ? 'down' : null;
     if (dir) { e.preventDefault(); e.stopPropagation(); move(dir); return; }
     if (c === K.ENTER) {
-      if (!current || !document.contains(current)) { e.preventDefault(); move('down'); return; }
+      if (!reacquire()) { e.preventDefault(); move('down', true); return; }
       e.preventDefault(); e.stopPropagation();
       if (current.classList.contains('video-js')) { enterFullscreen(); if (isPaused()) togglePlay(); return; }
       activate(current);
     }
   }, true);
+
+  // After a page change, wait for the page's main action (player / watch
+  // button) to appear and focus it; fall back to the nearest item.
+  var initTimer = null;
+  function initialFocus() {
+    clearInterval(initTimer);
+    var tries = 0;
+    initTimer = setInterval(function () {
+      tries++;
+      if (current && document.contains(current)) { clearInterval(initTimer); return; }
+      var pt = primaryTarget(candidates());
+      if (pt) { setFocus(pt.el, { noScroll: true }); clearInterval(initTimer); return; }
+      if (tries >= 14) { clearInterval(initTimer); if (!current) move('down'); }
+    }, 300);
+  }
 
   /* ------------------------------------------ site-specific preparation */
 
@@ -508,16 +538,16 @@
   setTimeout(fixStartPage, 2500);
 
   // When the page changes (Angular route), drop the stale focus and start again
-  var lastPath = location.pathname;
+  var lastPath = location.pathname + location.search;
   setInterval(function () {
-    if (location.pathname !== lastPath) {
-      lastPath = location.pathname;
+    if (location.pathname + location.search !== lastPath) {
+      lastPath = location.pathname + location.search;
       current = null;
-      lastPoint = { x: VW() * 0.75, y: VH() * 0.35 }; // start near the top of the content (RTL)
-      setTimeout(function () { if (!current) move('down', true); }, 1200);
+      lastPoint = { x: VW() * 0.6, y: VH() * 0.45 }; // fallback: middle of the content
+      initialFocus();
       fixStartPage();
     }
-    if (current && !document.contains(current)) current = null;
+    if (current && !document.contains(current)) { current = null; reacquire(); }
   }, 400);
 
   // TizenBrew registers keys from package.json; register again in case
@@ -530,10 +560,18 @@
   function screenSaver(on) {
     try { var ac = webapis.appcommon; ac.setScreenSaver(on ? ac.AppCommonScreenSaverState.SCREEN_SAVER_ON : ac.AppCommonScreenSaverState.SCREEN_SAVER_OFF); } catch (e) {}
   }
-  document.addEventListener('playing', function () { screenSaver(false); }, true);
+  document.addEventListener('playing', function () {
+    screenSaver(false);
+    window.__cr.log.push('playing ' + Date.now());
+    // when a video starts, put the focus on the player so OK = fullscreen
+    var box = document.querySelector('.video-js');
+    if (box && !inFullscreen() && !(current && current.closest && current.closest('.video-js'))) {
+      setTimeout(function () { setFocus(box, { noScroll: false }); }, 300);
+    }
+  }, true);
   document.addEventListener('pause', function () { screenSaver(true); }, true);
 
   // first focus once the page has content
-  setTimeout(function () { if (!current) move('down', true); }, 2500);
+  initialFocus();
   toast('Cinemana — التحكم بالريموت جاهز', 2000);
 })();
